@@ -6,18 +6,32 @@ const {
 const path = require('path');
 const fs = require('fs');
 
-// Телемост не должен видеть, что он внутри Electron — выглядим как обычный Chrome.
+// Телемост и Zoom не должны видеть, что они внутри Electron — выглядим как обычный Chrome.
 app.userAgentFallback = app.userAgentFallback.replace(/\s(Electron|earmixer|EarMixer)\/\S+/g, '');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 const SLOTS = ['A', 'B'];
 const SIDES = ['left', 'right', 'both', 'mute'];
-const TELEMOST_HOME = 'https://telemost.yandex.ru/';
+
+const SERVICES = {
+  telemost: {
+    home: 'https://telemost.yandex.ru/',
+    matches: (host) => /(^|\.)telemost\.yandex\.[a-z.]+$/.test(host),
+    inMeeting: (u) => /^\/j\/\d+/.test(u.pathname),
+    fromId: (id) => `https://telemost.yandex.ru/j/${id}`,
+  },
+  zoom: {
+    home: 'https://app.zoom.us/wc/join',
+    matches: (host) => /(^|\.)(zoom\.(us|com)|zoomgov\.com)$/.test(host),
+    inMeeting: (u) => /^\/wc\/\d+\/(join|start)/.test(u.pathname),
+    fromId: (id) => `https://app.zoom.us/wc/${id}/join`,
+  },
+};
 
 const DEFAULTS = {
   slots: {
-    A: { side: 'left', volume: 1, mic: true },
-    B: { side: 'right', volume: 1, mic: true },
+    A: { side: 'left', volume: 1, mic: true, service: 'telemost' },
+    B: { side: 'right', volume: 1, mic: true, service: 'telemost' },
   },
   sinkLabel: '',
   layout: 'split',
@@ -27,8 +41,8 @@ let settings = loadSettings();
 let win = null;
 const views = {};
 const viewState = {
-  A: { url: '', title: '', loading: false, canGoBack: false },
-  B: { url: '', title: '', loading: false, canGoBack: false },
+  A: { url: '', title: '', loading: false, canGoBack: false, inMeeting: false },
+  B: { url: '', title: '', loading: false, canGoBack: false, inMeeting: false },
 };
 
 // ---------- настройки ----------
@@ -42,6 +56,7 @@ function loadSettings() {
   try {
     const saved = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
     for (const slot of SLOTS) Object.assign(s.slots[slot], saved.slots?.[slot]);
+    for (const slot of SLOTS) if (!SERVICES[s.slots[slot].service]) s.slots[slot].service = 'telemost';
     if (typeof saved.sinkLabel === 'string') s.sinkLabel = saved.sinkLabel;
     if (['split', 'A', 'B'].includes(saved.layout)) s.layout = saved.layout;
   } catch { /* первый запуск */ }
@@ -104,11 +119,34 @@ function setupSession(ses) {
   }, { useSystemPicker: true });
 }
 
-function isYandex(url) {
-  try {
-    const host = new URL(url).hostname;
-    return /(^|\.)(yandex\.(ru|com|net|by|kz|uz|com\.tr)|ya\.ru|yastatic\.net)$/.test(host);
-  } catch { return false; }
+function parseUrl(url) {
+  try { return new URL(url); } catch { return null; }
+}
+
+function isTrustedPopup(url) {
+  const host = parseUrl(url)?.hostname || '';
+  return /(^|\.)(yandex\.(ru|com|net|by|kz|uz|com\.tr)|ya\.ru|yastatic\.net)$/.test(host)
+    || SERVICES.zoom.matches(host);
+}
+
+function serviceOf(url) {
+  const host = parseUrl(url)?.hostname || '';
+  return Object.keys(SERVICES).find((name) => SERVICES[name].matches(host)) || null;
+}
+
+function inMeeting(url) {
+  const u = parseUrl(url);
+  const service = u && serviceOf(url);
+  return !!service && SERVICES[service].inMeeting(u);
+}
+
+// zoom.us/j/123?pwd=… открывает «запустить Zoom» — переводим сразу в веб-клиент.
+function toZoomWebClient(url) {
+  const u = parseUrl(url);
+  if (!u || !SERVICES.zoom.matches(u.hostname)) return null;
+  const m = u.pathname.match(/^\/([js])\/(\d+)/);
+  if (!m) return null;
+  return `${u.origin}/wc/${m[2]}/${m[1] === 'j' ? 'join' : 'start'}${u.search}`;
 }
 
 function createView(slot) {
@@ -135,8 +173,13 @@ function createView(slot) {
   const wc = view.webContents;
 
   wc.setWindowOpenHandler(({ url }) => {
-    if (isYandex(url)) {
-      // Авторизация и прочие окна Яндекса — в отдельном окне с той же сессией.
+    const zoomUrl = toZoomWebClient(url);
+    if (zoomUrl) {
+      wc.loadURL(zoomUrl);
+      return { action: 'deny' };
+    }
+    if (isTrustedPopup(url)) {
+      // Авторизация и прочие окна Яндекса/Zoom — в отдельном окне с той же сессией.
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
@@ -149,22 +192,45 @@ function createView(slot) {
     return { action: 'deny' };
   });
 
-  // Блокируем попытки открыть десктопный клиент (yandextelemost:// и т.п.).
-  const blockCustomSchemes = (e) => {
-    if (!/^(https?|about|blob|data):/i.test(e.url)) e.preventDefault();
+  // Блокируем попытки открыть десктопный клиент (yandextelemost://, zoommtg:// и т.п.),
+  // а страницы запуска Zoom-встреч подменяем веб-клиентом.
+  const guardNavigation = (e) => {
+    if (!/^(https?|about|blob|data):/i.test(e.url)) {
+      e.preventDefault();
+      return;
+    }
+    if (e.isMainFrame === false) return;
+    const zoomUrl = toZoomWebClient(e.url);
+    if (zoomUrl) {
+      e.preventDefault();
+      wc.loadURL(zoomUrl);
+    }
   };
-  wc.on('will-navigate', blockCustomSchemes);
-  wc.on('will-frame-navigate', blockCustomSchemes);
+  wc.on('will-navigate', guardNavigation);
+  wc.on('will-redirect', guardNavigation);
+  wc.on('will-frame-navigate', (e) => {
+    if (!/^(https?|about|blob|data):/i.test(e.url)) e.preventDefault();
+  });
 
   const update = () => {
     if (wc.isDestroyed()) return;
+    const url = wc.getURL();
     viewState[slot] = {
-      url: wc.getURL(),
+      url,
       title: wc.getTitle(),
       loading: wc.isLoading(),
       canGoBack: wc.navigationHistory.canGoBack(),
+      inMeeting: inMeeting(url),
     };
     sendUI('view-state', { slot, ...viewState[slot] });
+
+    // Пользователь сам ушёл в другой сервис (вставил ссылку и т.п.) — запоминаем.
+    const service = serviceOf(url);
+    if (service && service !== settings.slots[slot].service) {
+      settings.slots[slot].service = service;
+      sendUI('settings', settings);
+      saveSettings();
+    }
   };
   for (const ev of ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated']) {
     wc.on(ev, update);
@@ -172,17 +238,19 @@ function createView(slot) {
   wc.on('render-process-gone', () => setTimeout(() => !wc.isDestroyed() && wc.reload(), 1000));
 
   views[slot] = view;
-  wc.loadURL(TELEMOST_HOME);
+  wc.loadURL(SERVICES[settings.slots[slot].service].home);
 }
 
-function normalizeUrl(input) {
+// Ссылка, адрес без https:// или просто ID встречи (трактуется по выбранному сервису).
+function normalizeUrl(input, service) {
   const s = String(input || '').trim();
   if (!s) return null;
-  if (/^https?:\/\//i.test(s)) return s;
   const digits = s.replace(/[\s-]/g, '');
-  if (/^\d{6,}$/.test(digits)) return `https://telemost.yandex.ru/j/${digits}`;
-  if (/^[^\s]+\.[^\s]+/.test(s)) return `https://${s}`;
-  return null;
+  if (/^\d{6,}$/.test(digits)) return SERVICES[service].fromId(digits);
+  let url = null;
+  if (/^https?:\/\//i.test(s)) url = s;
+  else if (/^[^\s]+\.[^\s]+/.test(s)) url = `https://${s}`;
+  return url && (toZoomWebClient(url) || url);
 }
 
 // ---------- главное окно ----------
@@ -194,7 +262,7 @@ function createWindow() {
     minWidth: 1040,
     minHeight: 620,
     backgroundColor: '#0f1115',
-    title: 'EarMixer — два Телемоста, два уха',
+    title: 'EarMixer — два созвона, два уха',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'ui-preload.js'),
@@ -210,7 +278,7 @@ function createWindow() {
   SLOTS.forEach(createView);
 
   win.on('close', (e) => {
-    const inCall = SLOTS.some((slot) => /\/j\/\d+/.test(viewState[slot].url));
+    const inCall = SLOTS.some((slot) => viewState[slot].inMeeting);
     if (!inCall) return;
     const choice = dialog.showMessageBoxSync(win, {
       type: 'question',
@@ -264,6 +332,13 @@ ipcMain.on('ui:set', (_e, slot, patch) => {
   if (SIDES.includes(patch.side)) s.side = patch.side;
   if (Number.isFinite(patch.volume)) s.volume = Math.min(2, Math.max(0, patch.volume));
   if (typeof patch.mic === 'boolean') s.mic = patch.mic;
+  if (SERVICES[patch.service] && patch.service !== s.service) {
+    s.service = patch.service;
+    const wc = views[slot]?.webContents;
+    if (wc && !wc.isDestroyed() && serviceOf(wc.getURL()) !== s.service) {
+      wc.loadURL(SERVICES[s.service].home);
+    }
+  }
   pushAll();
 });
 
@@ -284,13 +359,13 @@ ipcMain.on('ui:nav', (_e, slot, action, arg) => {
   if (!wc || wc.isDestroyed()) return;
   switch (action) {
     case 'go': {
-      const url = normalizeUrl(arg);
+      const url = normalizeUrl(arg, settings.slots[slot].service);
       if (url) wc.loadURL(url);
       break;
     }
     case 'back': if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); break;
     case 'reload': wc.reload(); break;
-    case 'home': wc.loadURL(TELEMOST_HOME); break;
+    case 'home': wc.loadURL(SERVICES[settings.slots[slot].service].home); break;
     case 'devtools': wc.openDevTools({ mode: 'detach' }); break;
     default: break;
   }

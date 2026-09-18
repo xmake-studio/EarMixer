@@ -35,7 +35,10 @@ function runInMain(func, args) {
 function earMixerMain(initialCfg, key) {
   'use strict';
 
-  if (window[key] || !window.AudioContext || !window.AudioNode) return;
+  // Фрейм уже обслуживается перехватчиком родителя (см. patchRealm) — второй не нужен.
+  const PATCHED = Symbol.for('earmixer.patched');
+  if (window[key] || window[PATCHED] || !window.AudioContext || !window.AudioNode) return;
+  Object.defineProperty(window, PATCHED, { value: true });
 
   const bridge = window[`${key}b`];
   const cfg = Object.assign({ side: 'left', volume: 1, mic: true, sinkLabel: '' }, initialCfg);
@@ -109,10 +112,14 @@ function earMixerMain(initialCfg, key) {
   }
 
   // ---------------------------------------------------------------- перехват WebAudio
-  const isOffline = (ctx) => window.OfflineAudioContext && ctx instanceof OfflineAudioContext;
+  // Проверки типов без instanceof — объекты могут прийти из дочернего фрейма (другой realm).
+  const tag = (o) => Object.prototype.toString.call(o);
+  const isDest = (o) => o != null && tag(o) === '[object AudioDestinationNode]';
+  const isOffline = (ctx) => tag(ctx) === '[object OfflineAudioContext]';
+  const isStream = (o) => o != null && tag(o) === '[object MediaStream]';
 
   AudioNode.prototype.connect = function connect(dest, output, input) {
-    if (dest instanceof AudioDestinationNode && !isOffline(dest.context)) {
+    if (isDest(dest) && !isOffline(dest.context)) {
       const r = routerFor(dest.context);
       origConnect.call(this, r.input, output === undefined ? 0 : output, 0);
       return dest;
@@ -121,7 +128,7 @@ function earMixerMain(initialCfg, key) {
   };
 
   AudioNode.prototype.disconnect = function disconnect(dest, output) {
-    if (dest instanceof AudioDestinationNode) {
+    if (isDest(dest)) {
       const r = routers.get(dest.context);
       if (r) {
         return output === undefined
@@ -263,7 +270,7 @@ function earMixerMain(initialCfg, key) {
     set(v) {
       srcObjectDesc.set.call(this, v);
       try {
-        if (v instanceof MediaStream) attach(this, v);
+        if (isStream(v)) attach(this, v);
         else release(this);
       } catch (e) { log('srcObject hook failed', e); }
     },
@@ -338,6 +345,52 @@ function earMixerMain(initialCfg, key) {
     });
     return c;
   };
+
+  // ---------------------------------------------------------------- дочерние фреймы
+  // В about:blank-iframe у страницы «чистые» AudioNode/HTMLMediaElement, и через них
+  // звук обошёл бы маршрутизацию. При первом обращении к такому фрейму переносим туда
+  // наши перехватчики — фрейм работает через роутер и настройки родителя.
+  const REALM_PATCHES = [
+    ['AudioNode', ['connect', 'disconnect']],
+    ['HTMLMediaElement', ['srcObject', 'setSinkId']],
+    ['MediaDevices', ['getUserMedia']],
+    ['MediaStreamTrack', ['clone']],
+    ['MediaStream', ['clone']],
+  ];
+
+  function patchRealm(w) {
+    try {
+      if (!w || w === window || w[PATCHED] || !w.AudioNode) return;
+      Object.defineProperty(w, PATCHED, { value: true });
+      for (const [iface, props] of REALM_PATCHES) {
+        const from = window[iface] && window[iface].prototype;
+        const to = w[iface] && w[iface].prototype;
+        if (!from || !to) continue;
+        for (const p of props) {
+          const d = Object.getOwnPropertyDescriptor(from, p);
+          if (d) Object.defineProperty(to, p, d);
+        }
+      }
+    } catch (e) { /* чужой origin — у него свой preload */ }
+  }
+
+  for (const iface of ['HTMLIFrameElement', 'HTMLFrameElement', 'HTMLObjectElement']) {
+    const proto = window[iface] && window[iface].prototype;
+    if (!proto) continue;
+    for (const prop of ['contentWindow', 'contentDocument']) {
+      const d = Object.getOwnPropertyDescriptor(proto, prop);
+      if (!d || !d.get) continue;
+      Object.defineProperty(proto, prop, {
+        configurable: true,
+        enumerable: d.enumerable,
+        get() {
+          const v = d.get.call(this);
+          if (v) patchRealm(prop === 'contentWindow' ? v : v.defaultView);
+          return v;
+        },
+      });
+    }
+  }
 
   // ---------------------------------------------------------------- индикатор уровня
   let lastSent = 0;

@@ -4,6 +4,11 @@ const SLOTS = ['A', 'B'];
 const NAMES = { A: 'Созвон 1', B: 'Созвон 2' };
 const SIDE_BADGE = { left: 'Л', right: 'П', both: 'Л+П', mute: '—' };
 const SIDE_FREQ = { A: 660, B: 440 };
+const SERVICE_NAMES = { telemost: 'Телемост', zoom: 'Zoom' };
+const SERVICE_HINTS = {
+  telemost: 'Ссылка или ID встречи Телемоста',
+  zoom: 'Ссылка или ID встречи Zoom (zoom.us/j/…)',
+};
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -49,6 +54,7 @@ function buildCalls() {
 
     $$('[data-nav]', node).forEach((b) => b.addEventListener('click', () => window.ear.nav(slot, b.dataset.nav)));
     $$('[data-side]', node).forEach((b) => b.addEventListener('click', () => window.ear.set(slot, { side: b.dataset.side })));
+    $$('[data-service]', node).forEach((b) => b.addEventListener('click', () => window.ear.set(slot, { service: b.dataset.service })));
 
     e.volRange.addEventListener('input', () => {
       const v = Number(e.volRange.value) / 100;
@@ -82,10 +88,15 @@ function render() {
     if (document.activeElement !== e.volRange) paintVolume(slot, s.volume);
     e.mic.classList.toggle('off', !s.mic);
     e.micLabel.textContent = s.mic ? 'Микрофон' : 'Микрофон выкл';
+    $$('[data-service]', e.root).forEach((b) => b.classList.toggle('active', b.dataset.service === s.service));
+    e.url.placeholder = SERVICE_HINTS[s.service];
+    e.root.dataset.service = s.service;
   }
 
   // Карта «ухо → созвон» в шапке
-  const hears = (ear) => SLOTS.filter((slot) => [ear, 'both'].includes(settings.slots[slot].side)).map((s) => NAMES[s]);
+  const label = (slot) => (settings.slots.A.service === settings.slots.B.service
+    ? NAMES[slot] : `${NAMES[slot]} · ${SERVICE_NAMES[settings.slots[slot].service]}`);
+  const hears = (ear) => SLOTS.filter((slot) => [ear, 'both'].includes(settings.slots[slot].side)).map(label);
   for (const [ear, id] of [['left', 'mapLeft'], ['right', 'mapRight']]) {
     const list = hears(ear);
     const el = document.getElementById(id);
@@ -102,9 +113,8 @@ function renderView(slot) {
   const v = views[slot];
   const e = els[slot];
   if (!v || !e) return;
-  const inMeeting = /\/j\/\d+/.test(v.url || '');
-  e.status.classList.toggle('live', inMeeting && !v.loading);
-  e.status.textContent = v.loading ? 'загрузка…' : inMeeting ? '● во встрече' : (v.title || 'не во встрече');
+  e.status.classList.toggle('live', v.inMeeting && !v.loading);
+  e.status.textContent = v.loading ? 'загрузка…' : v.inMeeting ? '● встреча открыта' : (v.title || 'не во встрече');
   e.back.disabled = !v.canGoBack;
   if (document.activeElement !== e.url) e.url.value = v.url || '';
 }

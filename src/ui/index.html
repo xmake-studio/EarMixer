@@ -44,13 +44,17 @@
         <div class="row">
           <div class="ear-badge" title="Ухо"></div>
           <div class="call-name"><span class="name"></span><span class="status"></span></div>
+          <div class="seg service" title="Сервис видеосвязи">
+            <button data-service="telemost">Телемост</button>
+            <button data-service="zoom">Zoom</button>
+          </div>
           <form class="join">
-            <input class="url" spellcheck="false" placeholder="Ссылка или ID встречи Телемоста">
+            <input class="url" spellcheck="false" placeholder="Ссылка или ID встречи">
             <button class="btn primary" type="submit">Открыть</button>
           </form>
           <button class="btn icon" data-nav="back" title="Назад"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
           <button class="btn icon" data-nav="reload" title="Обновить"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></button>
-          <button class="btn icon" data-nav="home" title="Главная Телемоста (выйти из встречи)"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7M5 10v10h14V10"/></svg></button>
+          <button class="btn icon" data-nav="home" title="Главная сервиса (выйти из встречи)"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7M5 10v10h14V10"/></svg></button>
         </div>
         <div class="row controls">
           <div class="seg side" title="В какое ухо выводить этот созвон">
@@ -72,7 +76,7 @@
             <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
             Тест
           </button>
-          <button class="btn mic" title="Пускать ли ваш микрофон в этот созвон (поверх кнопки Телемоста)">
+          <button class="btn mic" title="Пускать ли ваш микрофон в этот созвон (поверх кнопки самого сервиса)">
             <svg class="mic-on" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
             <svg class="mic-off" viewBox="0 0 24 24"><path d="M9 9v2a3 3 0 0 0 5.1 2.1M15 10V6a3 3 0 0 0-5.7-1.3M5 11a7 7 0 0 0 11.5 5.4M19 11a7 7 0 0 1-.6 2.8M12 18v3M3 3l18 18"/></svg>
             <span class="mic-label"></span>
@@ -82,7 +86,7 @@
       <div class="view-host">
         <div class="placeholder">
           <div class="spinner"></div>
-          <p>Загружаю Телемост…</p>
+          <p>Загрузка…</p>
         </div>
       </div>
     </section>
