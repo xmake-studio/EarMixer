@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>EarMixer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" class="brand-icon" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="14" width="5" height="7" rx="2" class="fill-l"/><rect x="16.5" y="14" width="5" height="7" rx="2" class="fill-r"/></svg>
+      <span>EarMixer</span>
+    </div>
+
+    <div class="ear-map" title="Что звучит в каком ухе">
+      <div class="ear-chip" data-ear="left"><b>Л</b><span id="mapLeft">—</span></div>
+      <button id="swapBtn" class="btn ghost" title="Поменять уши местами">
+        <svg viewBox="0 0 24 24"><path d="M7 7h13l-4-4M17 17H4l4 4"/></svg>
+        Поменять
+      </button>
+      <div class="ear-chip" data-ear="right"><b>П</b><span id="mapRight">—</span></div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <label class="field">
+      <svg viewBox="0 0 24 24"><path d="M3 14v-2a9 9 0 0 1 18 0v2"/><path d="M21 15a2 2 0 0 1-2 2h-1v-5h3zM3 15a2 2 0 0 0 2 2h1v-5H3z"/></svg>
+      <select id="sinkSelect" title="Куда выводить звук обоих созвонов"></select>
+    </label>
+
+    <div class="seg" id="layoutSeg" title="Раскладка">
+      <button data-layout="A">1</button>
+      <button data-layout="split">1 | 2</button>
+      <button data-layout="B">2</button>
+    </div>
+  </header>
+
+  <main class="calls" id="calls"></main>
+
+  <template id="callTpl">
+    <section class="call">
+      <div class="call-head">
+        <div class="row">
+          <div class="ear-badge" title="Ухо"></div>
+          <div class="call-name"><span class="name"></span><span class="status"></span></div>
+          <form class="join">
+            <input class="url" spellcheck="false" placeholder="Ссылка или ID встречи Телемоста">
+            <button class="btn primary" type="submit">Открыть</button>
+          </form>
+          <button class="btn icon" data-nav="back" title="Назад"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+          <button class="btn icon" data-nav="reload" title="Обновить"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></button>
+          <button class="btn icon" data-nav="home" title="Главная Телемоста (выйти из встречи)"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7M5 10v10h14V10"/></svg></button>
+        </div>
+        <div class="row controls">
+          <div class="seg side" title="В какое ухо выводить этот созвон">
+            <button data-side="left">Левое</button>
+            <button data-side="both">Оба</button>
+            <button data-side="right">Правое</button>
+            <button data-side="mute" title="Не слышать этот созвон">
+              <svg viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4zM22 9l-6 6M16 9l6 6"/></svg>
+            </button>
+          </div>
+          <div class="vol" title="Громкость созвона">
+            <svg viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7"/></svg>
+            <input type="range" min="0" max="200" step="5" class="vol-range">
+            <span class="vol-val"></span>
+          </div>
+          <div class="meter" title="Уровень звука созвона"><div class="meter-fill"></div></div>
+          <div class="spacer"></div>
+          <button class="btn test" title="Проиграть тестовый сигнал в выбранное ухо">
+            <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            Тест
+          </button>
+          <button class="btn mic" title="Пускать ли ваш микрофон в этот созвон (поверх кнопки Телемоста)">
+            <svg class="mic-on" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            <svg class="mic-off" viewBox="0 0 24 24"><path d="M9 9v2a3 3 0 0 0 5.1 2.1M15 10V6a3 3 0 0 0-5.7-1.3M5 11a7 7 0 0 0 11.5 5.4M19 11a7 7 0 0 1-.6 2.8M12 18v3M3 3l18 18"/></svg>
+            <span class="mic-label"></span>
+          </button>
+        </div>
+      </div>
+      <div class="view-host">
+        <div class="placeholder">
+          <div class="spinner"></div>
+          <p>Загружаю Телемост…</p>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

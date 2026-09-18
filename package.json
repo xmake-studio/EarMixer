@@ -1,0 +1,14 @@
+{
+  "name": "earmixer",
+  "productName": "EarMixer",
+  "version": "1.0.0",
+  "description": "Два созвона в Яндекс Телемосте одновременно: один в левом ухе, другой в правом",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.4.2"
+  }
+}
